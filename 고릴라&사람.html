@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teachable Machine Enhanced Studio</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- TensorFlow.js and Teachable Machine Image Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-full flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+    <header class="bg-slate-800/80 backdrop-blur border-b border-slate-700 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <i class="fa-solid fa-brain text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Teachable Studio Pro</h1>
+                <p class="text-xs text-slate-400">Model ID: mJooIIgb2</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span id="status-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> 모델 로딩 대기 중
+            </span>
+            <button id="fullscreen-btn" onclick="toggleFullscreen()" class="p-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 transition" title="전체화면">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto">
+        
+        <!-- Left Column: Feed & Controls (7 cols) -->
+        <section class="lg:col-span-7 flex flex-col space-y-4">
+            <!-- Mode Switcher Tabs -->
+            <div class="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button id="tab-webcam" onclick="switchMode('webcam')" class="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition bg-indigo-600 text-white shadow">
+                    <i class="fa-solid fa-video mr-2"></i> 웹캠 실시간 모드
+                </button>
+                <button id="tab-upload" onclick="switchMode('upload')" class="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-image mr-2"></i> 사진 업로드 모드
+                </button>
+            </div>
+
+            <div class="relative bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col items-center justify-center aspect-[4/3] group">
+                <!-- Webcam Container -->
+                <div id="webcam-container" class="w-full h-full flex items-center justify-center bg-slate-950 relative">
+                    <div id="loading-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm z-10 transition-opacity duration-300">
+                        <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                        <p class="text-slate-300 font-medium text-sm">카메라 및 모델 로딩 중...</p>
+                    </div>
+                </div>
+
+                <!-- Upload Container (Hidden by default) -->
+                <div id="upload-container" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-6 hidden">
+                    <input type="file" id="image-upload-input" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                    <div id="upload-dropzone" onclick="document.getElementById('image-upload-input').click()" class="w-full h-full border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-slate-900/50 hover:bg-slate-900 transition p-6 text-center">
+                        <div id="upload-preview-wrapper" class="w-full h-full flex flex-col items-center justify-center">
+                            <div class="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 border border-indigo-500/20">
+                                <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                            </div>
+                            <h3 class="font-semibold text-slate-200 text-base mb-1">이미지 파일을 드롭하거나 클릭하여 업로드</h3>
+                            <p class="text-xs text-slate-400">JPG, PNG, WEBP 지원 (최대 10MB)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Floating Controls Overlay on Video (Visible only in webcam mode) -->
+                <div id="webcam-controls" class="absolute bottom-4 left-4 right-4 flex items-center justify-between bg-slate-900/80 backdrop-blur-md px-4 py-3 rounded-xl border border-slate-700/50 opacity-90 hover:opacity-100 transition">
+                    <div class="flex items-center space-x-2">
+                        <button id="toggle-cam-btn" onclick="toggleCamera()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-lg shadow-lg shadow-indigo-600/30 transition flex items-center gap-2 disabled:opacity-50" disabled>
+                            <i class="fa-solid fa-video"></i> <span id="cam-btn-text">카메라 끄기</span>
+                        </button>
+                        <button onclick="takeSnapshot()" class="p-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition" title="캡처하기">
+                            <i class="fa-solid fa-camera"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center space-x-2 text-xs text-slate-400">
+                        <span id="fps-counter">FPS: 0</span>
+                    </div>
+                </div>
+
+                <!-- Upload Actions Overlay -->
+                <div id="upload-controls" class="absolute bottom-4 left-4 right-4 flex items-center justify-between bg-slate-900/80 backdrop-blur-md px-4 py-3 rounded-xl border border-slate-700/50 hidden">
+                    <button onclick="document.getElementById('image-upload-input').click()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-lg shadow-lg shadow-indigo-600/30 transition flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-rotate-right"></i> 다른 사진 선택
+                    </button>
+                    <span id="upload-filename" class="text-xs text-slate-400 truncate max-w-[200px]">선택된 파일 없음</span>
+                </div>
+            </div>
+
+            <!-- Stats Summary -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-slate-400 font-medium">분석된 총 횟수</p>
+                        <h3 id="stat-total-frames" class="text-2xl font-bold text-indigo-400">0</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </div>
+                </div>
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-slate-400 font-medium">최고 확률 감지</p>
+                        <h3 id="stat-top-confidence" class="text-2xl font-bold text-emerald-400">0%</h3>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+                        <i class="fa-solid fa-bullseye"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Column: Real-time Class Predictions & Analytics (5 cols) -->
+        <section class="lg:col-span-5 flex flex-col space-y-4">
+            <div class="bg-slate-800 rounded-2xl border border-slate-700 p-5 flex flex-col h-full shadow-xl">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-700">
+                    <h2 class="font-semibold text-base text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-indigo-400"></i> 분류 결과
+                    </h2>
+                    <span id="top-prediction-label" class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-700 text-slate-300">대기 중...</span>
+                </div>
+
+                <!-- Predictions Progress Bars Container -->
+                <div id="label-container" class="flex-1 py-4 space-y-4 overflow-y-auto pr-1">
+                    <div class="text-center text-slate-500 py-12">모델이 로드되면 분류 결과가 여기에 표시됩니다.</div>
+                </div>
+
+                <!-- Extra Utilities / Log -->
+                <div class="pt-4 border-t border-slate-700 mt-auto">
+                    <div class="bg-slate-900/60 rounded-xl p-3 border border-slate-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-slate-400">알림 및 이벤트 기록</span>
+                            <button onclick="clearLogs()" class="text-xs text-indigo-400 hover:text-indigo-300 transition">지우기</button>
+                        </div>
+                        <div id="log-container" class="h-20 overflow-y-auto text-xs space-y-1 text-slate-400 font-mono">
+                            <p>[시스템] Teachable Machine 웹앱이 초기화되었습니다.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        const URL_MODEL = "https://teachablemachine.withgoogle.com/models/mJooIIgb2/";
+
+        let model, webcam, maxPredictions;
+        let isWebcamRunning = false;
+        let totalFrames = 0;
+        let lastTime = performance.now();
+        let fpsCount = 0;
+        let currentMode = 'webcam'; // 'webcam' or 'upload'
+        let uploadedImageElement = null;
+
+        // Custom Notification / Log Helper
+        function addLog(message) {
+            const container = document.getElementById('log-container');
+            if (!container) return;
+            const timeStr = new Date().toLocaleTimeString();
+            const p = document.createElement('p');
+            p.textContent = `[${timeStr}] ${message}`;
+            container.prepend(p);
+        }
+
+        function clearLogs() {
+            document.getElementById('log-container').innerHTML = '';
+        }
+
+        // Initialize Teachable Machine Model & Webcam
+        async function initModel() {
+            const statusBadge = document.getElementById('status-badge');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const toggleBtn = document.getElementById('toggle-cam-btn');
+
+            try {
+                statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> 모델 및 메타데이터 로딩 중...`;
+                addLog("모델 파일 로딩 시작...");
+
+                const modelURL = URL_MODEL + "model.json";
+                const metadataURL = URL_MODEL + "metadata.json";
+
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+                addLog(`모델 로드 완료! 클래스 수: ${maxPredictions}`);
+
+                // Setup Webcam
+                const flip = true;
+                webcam = new tmImage.Webcam(320, 240, flip);
+                await webcam.setup();
+                await webcam.play();
+                isWebcamRunning = true;
+                
+                window.requestAnimationFrame(loop);
+
+                // Append webcam element to DOM
+                const webcamContainer = document.getElementById('webcam-container');
+                if (loadingOverlay) loadingOverlay.remove();
+                
+                webcam.canvas.classList.add('w-full', 'h-full', 'object-cover');
+                webcamContainer.appendChild(webcam.canvas);
+
+                // Setup label container elements
+                setupLabelContainers();
+
+                statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> 모델 실행 중`;
+                statusBadge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5";
+                toggleBtn.removeAttribute('disabled');
+                addLog("웹캠 스트리밍 및 실시간 분류가 시작되었습니다.");
+
+            } catch (error) {
+                console.error(error);
+                statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> 로딩 실패`;
+                statusBadge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1.5";
+                if (loadingOverlay) {
+                    loadingOverlay.innerHTML = `<p class="text-rose-400 text-sm font-medium">카메라 권한 거부 또는 로딩 오류 발생</p>`;
+                }
+                addLog(`오류 발생: ${error.message}`);
+            }
+        }
+
+        function setupLabelContainers() {
+            labelContainer = document.getElementById('label-container');
+            labelContainer.innerHTML = '';
+            for (let i = 0; i < maxPredictions; i++) {
+                const wrapper = document.createElement('div');
+                wrapper.className = "space-y-1.5";
+                wrapper.innerHTML = `
+                    <div class="flex justify-between text-sm">
+                        <span id="label-name-${i}" class="font-medium text-slate-300">클래스 ${i+1}</span>
+                        <span id="label-prob-${i}" class="font-bold text-indigo-400">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-slate-700/50">
+                        <div id="label-bar-${i}" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-2.5 rounded-full transition-all duration-150" style="width: 0%"></div>
+                    </div>
+                `;
+                labelContainer.appendChild(wrapper);
+            }
+        }
+
+        async function loop() {
+            if (currentMode === 'webcam' && isWebcamRunning) {
+                webcam.update();
+                await predict(webcam.canvas);
+                
+                totalFrames++;
+                document.getElementById('stat-total-frames').textContent = totalFrames.toLocaleString();
+                
+                const now = performance.now();
+                fpsCount++;
+                if (now - lastTime >= 1000) {
+                    document.getElementById('fps-counter').textContent = `FPS: ${fpsCount}`;
+                    fpsCount = 0;
+                    lastTime = now;
+                }
+
+                window.requestAnimationFrame(loop);
+            }
+        }
+
+        async function predict(sourceElement) {
+            const prediction = await model.predict(sourceElement);
+            let highestProb = 0;
+            let topClassName = "";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const className = prediction[i].className;
+                const probability = prediction[i].probability;
+                const probPercent = (probability * 100).toFixed(1);
+
+                if (probability > highestProb) {
+                    highestProb = probability;
+                    topClassName = className;
+                }
+
+                const nameEl = document.getElementById(`label-name-${i}`);
+                const probEl = document.getElementById(`label-prob-${i}`);
+                const barEl = document.getElementById(`label-bar-${i}`);
+
+                if (nameEl) nameEl.textContent = className;
+                if (probEl) probEl.textContent = `${probPercent}%`;
+                if (barEl) barEl.style.width = `${probPercent}%`;
+            }
+
+            const topBadge = document.getElementById('top-prediction-label');
+            const topConfidenceStat = document.getElementById('stat-top-confidence');
+            if (topBadge) topBadge.textContent = `${topClassName} (${(highestProb*100).toFixed(0)}%)`;
+            if (topConfidenceStat) topConfidenceStat.textContent = `${(highestProb*100).toFixed(1)}%`;
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            const tabWebcam = document.getElementById('tab-webcam');
+            const tabUpload = document.getElementById('tab-upload');
+            const webcamContainer = document.getElementById('webcam-container');
+            const uploadContainer = document.getElementById('upload-container');
+            const webcamControls = document.getElementById('webcam-controls');
+            const uploadControls = document.getElementById('upload-controls');
+
+            if (mode === 'webcam') {
+                tabWebcam.className = "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition bg-indigo-600 text-white shadow";
+                tabUpload.className = "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition text-slate-400 hover:text-slate-200";
+                webcamContainer.classList.remove('hidden');
+                uploadContainer.classList.add('hidden');
+                webcamControls.classList.remove('hidden');
+                uploadControls.classList.add('hidden');
+
+                if (webcam && !isWebcamRunning) {
+                    webcam.play();
+                    isWebcamRunning = true;
+                    window.requestAnimationFrame(loop);
+                }
+                addLog("웹캠 모드로 전환되었습니다.");
+            } else {
+                tabUpload.className = "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition bg-indigo-600 text-white shadow";
+                tabWebcam.className = "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition text-slate-400 hover:text-slate-200";
+                uploadContainer.classList.remove('hidden');
+                webcamContainer.classList.add('hidden');
+                uploadControls.classList.remove('hidden');
+                webcamControls.classList.add('hidden');
+
+                if (webcam && isWebcamRunning) {
+                    webcam.pause();
+                    isWebcamRunning = false;
+                }
+                addLog("사진 업로드 모드로 전환되었습니다.");
+            }
+        }
+
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('upload-filename').textContent = file.name;
+            addLog(`이미지 파일 업로드됨: ${file.name}`);
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const img = new Image();
+                img.onload = async function() {
+                    uploadedImageElement = img;
+                    
+                    // Render inside upload preview
+                    const wrapper = document.getElementById('upload-preview-wrapper');
+                    wrapper.innerHTML = '';
+                    
+                    const previewImg = document.createElement('img');
+                    previewImg.src = e.target.result;
+                    previewImg.className = "max-h-full max-w-full object-contain rounded-xl shadow-lg";
+                    wrapper.appendChild(previewImg);
+
+                    // Run prediction on uploaded image
+                    if (model) {
+                        await predict(img);
+                        totalFrames++;
+                        document.getElementById('stat-total-frames').textContent = totalFrames.toLocaleString();
+                        addLog("업로드된 이미지 분류가 완료되었습니다.");
+                    }
+                }
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+
+        function toggleCamera() {
+            const btnText = document.getElementById('cam-btn-text');
+            if (isWebcamRunning) {
+                webcam.pause();
+                isWebcamRunning = false;
+                btnText.textContent = "카메라 켜기";
+                addLog("웹캠이 일시정지되었습니다.");
+            } else {
+                webcam.play();
+                isWebcamRunning = true;
+                btnText.textContent = "카메라 끄기";
+                window.requestAnimationFrame(loop);
+                addLog("웹캠이 재개되었습니다.");
+            }
+        }
+
+        function takeSnapshot() {
+            if (!webcam || !isWebcamRunning) return;
+            const dataUrl = webcam.canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `snapshot_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            addLog("현재 화면의 스냅샷이 저장되었습니다.");
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.error(err);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        window.onload = function() {
+            initModel();
+        };
+    </script>
+</body>
+</html>
